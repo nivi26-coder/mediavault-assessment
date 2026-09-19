@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { bulkSetStatus } from '@/api/client';
 import { AssetDetail } from '@/features/assets/AssetDetail';
 import { AssetGrid } from '@/features/assets/AssetGrid';
 import { useInfiniteAssets } from '@/features/assets/useInfiniteAssets';
 import { useUrlState } from '@/lib/useUrlState';
+import { useResizablePanel } from '@/lib/useResizablePanel';
 import { statusLabel } from '@/lib/format';
 import type { Asset, AssetStatus, AssetQuery } from '@/lib/types';
 
@@ -41,6 +42,7 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const panel = useResizablePanel(340, 280, 640);
 
   const { items, total, status, error, loadMore, hasMore } = useInfiniteAssets({
     q: filters.q,
@@ -48,14 +50,18 @@ export function App() {
     sort: filters.sort,
   });
 
-  function toggleSelect(id: string) {
+  // Memoized: this is passed down to every card as a prop, and AssetCard is
+  // wrapped in React.memo — a new function identity on every App render
+  // would invalidate that memoization for every card at once, not just the
+  // one that changed.
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
   async function applyBulkStatus(next: AssetStatus) {
     const ids = [...selectedIds];
@@ -148,15 +154,32 @@ export function App() {
             onToggleSelect={toggleSelect}
             onOpen={setActiveId}
             isInitialLoading={status === 'loading' && items.length === 0}
+            hasMore={hasMore}
+            isLoadingMore={status === 'loading-more'}
+            onLoadMore={loadMore}
           />
-          {hasMore && items.length > 0 && (
-            <button className="loadMore" onClick={loadMore} disabled={status === 'loading-more'}>
-              {status === 'loading-more' ? 'Loading more…' : 'Load more'}
-            </button>
-          )}
         </div>
         {activeId && (
-          <AssetDetail id={activeId} onClose={() => setActiveId(null)} onSaved={handleSaved} />
+          <>
+            <div
+              className="panelResizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize detail panel"
+              aria-valuenow={panel.width}
+              aria-valuemin={panel.min}
+              aria-valuemax={panel.max}
+              tabIndex={0}
+              onMouseDown={panel.startResize}
+              onKeyDown={panel.handleKeyDown}
+            />
+            <AssetDetail
+              id={activeId}
+              width={panel.width}
+              onClose={() => setActiveId(null)}
+              onSaved={handleSaved}
+            />
+          </>
         )}
       </main>
     </div>

@@ -67,17 +67,35 @@ six of these is about right.
 
 ## Performance
 
-Fill in real measurements, not estimates. Say which machine and browser.
+Measured on Windows 11, Chrome 152.0.7977.83, headless (via `puppeteer-core`
+driving the actual installed Chrome, not a simulated/estimated number),
+against the app running under default `CHAOS=1 LATENCY=1`. "Before" was
+measured by checking out the original scaffold commit into a separate git
+worktree and running it live, not reasoned about after the fact.
 
 | Metric | Before | After | How measured |
 | --- | --- | --- | --- |
-| Rendered DOM nodes at 5,000 rows loaded | | | |
-| Cards re-rendered when toggling one selection | | | |
-| Longest task during sustained scroll | | | |
-| Requests fired while typing a 6-character query | | | |
-| Production bundle, gzipped | | | |
+| Rendered DOM nodes at 5,000 rows loaded | N/A — baseline can never load past 24 (`nextCursor` was fetched but never used) | 551 total DOM nodes / 72 rendered cards, at 5,064 assets logically loaded | Scrolled the live app until the "N of 12,400 shown" counter passed 5,000, then `document.querySelectorAll('*').length` / `.card` count |
+| Cards re-rendered when toggling one selection | 24 (entire list; no memoization existed) | 1 | Temporarily instrumented `AssetCard`'s render body with a counter, reset it after initial load settled, clicked one checkbox, read the delta. (First attempt used a `MutationObserver` on the real DOM instead — that gave a misleading "1" even *before* the fix, since React can skip real DOM writes for unchanged output regardless of memoization. The render-counter approach is the correct one; removed after measuring.) |
+| Longest task during sustained scroll | Not applicable — baseline has nothing to scroll (stuck at 24 rows) | 0 long tasks (none >50ms) across ~3s of continuous scrolling | `PerformanceObserver` with `entryTypes: ['longtask']` while scrolling the grid programmatically |
+| Requests fired while typing a 6-character query | 6 (one per keystroke, confirmed live) | 1 | Typed the same 6 characters into `.search` at a natural typing cadence (60ms/keystroke) on both versions, counted `GET /api/assets` requests via Puppeteer's request listener |
+| Production bundle, gzipped | 49.82 kB | 58.72 kB | `npm run build` output, both versions |
 
-What was the actual bottleneck, and how did you find it?
+**What was the actual bottleneck, and how did you find it?** Two real bugs
+were caught specifically *because* these were measured instead of assumed:
+1. The selection-toggle re-render "fix" initially looked correct by reading
+   the code, but the render-counter measurement showed all 42 visible cards
+   re-rendering, not 1. Root cause: `toggleSelect` in `App.tsx` was a plain
+   function, recreated every render, breaking `React.memo` on every card at
+   once since they all received the same changed function reference. Fixed
+   by wrapping it in `useCallback`.
+2. The bundle-size increase (49.82kB → 58.72kB) is `@tanstack/react-virtual`
+   — a real, measured cost, not hidden, traded for keeping DOM nodes flat
+   at scale (which the "before" row's "N/A" makes concrete: the baseline
+   literally cannot render 5,000 rows at all, let alone efficiently).
+
+See `PROGRESS.md` for the full story of both bugs, including how they were
+found and what the fix actually was.
 
 ---
 

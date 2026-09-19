@@ -7,6 +7,7 @@ const STATUSES: AssetStatus[] = ['draft', 'in_review', 'approved', 'archived'];
 
 interface Props {
   id: string;
+  width: number;
   onClose: () => void;
   onSaved: (asset: Asset) => void;
 }
@@ -15,7 +16,7 @@ interface Props {
  * Baseline detail panel. Loads on open, saves with no optimistic update,
  * surfaces failures as raw strings, and does nothing about focus.
  */
-export function AssetDetail({ id, onClose, onSaved }: Props) {
+export function AssetDetail({ id, width, onClose, onSaved }: Props) {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -44,7 +45,7 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
   }
 
   return (
-    <aside className="panel">
+    <aside className="panel" style={{ width }}>
       <div className="panel__head">
         <h2>Asset detail</h2>
         <button onClick={onClose}>Close</button>
