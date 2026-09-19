@@ -26,23 +26,23 @@ Roughly, and how you split it.
 
 | # | Defect | Where | Category | Fixed / left / out of scope |
 | --- | --- | --- | --- | --- |
-| 1 | Bulk update sends >50 ids in one call; API rejects with `400 too_many_ids` above that cap | `App.tsx` (`applyBulkStatus`) | Correctness | |
-| 2 | `handleSaved` is a no-op stub — editing status in the detail panel never updates the grid, so rows go stale after a save | `App.tsx` (`handleSaved`) | Correctness | |
-| 3 | Every keystroke in the search box fires a request immediately — no debounce | `App.tsx` / `useAssets.ts` | Performance | |
-| 4 | No request cancellation and no response-ordering guard — a slow response to an earlier query can overwrite a newer one (the "type 'tra' then finish quickly" race, since short-prefix queries are deliberately slower server-side) | `useAssets.ts`, `api/client.ts` | Correctness | |
-| 5 | `nextCursor` is fetched but never used — the hook always shows just the first page, so most of the 12,400 assets are unreachable, and there's no pagination/infinite-scroll at all | `useAssets.ts` | Correctness / Scale | |
-| 6 | Filter/search/sort state lives only in local `useState` — lost on reload, unshareable via URL, and stale cursors from prior queries are never invalidated | `App.tsx` | Correctness | |
-| 7 | Every row is rendered into the DOM regardless of result size — no virtualization, so DOM/memory grow unbounded as more assets load | `AssetGrid.tsx` | Performance / Scale | |
-| 8 | The grid is one component, so toggling a single card's selection re-renders every rendered card | `AssetGrid.tsx` | Performance | |
-| 9 | Grid has no keyboard model — cards/checkboxes are only reachable via native tab order, no roving tabindex, no arrow-key navigation, no ARIA grid semantics (`role`, `aria-selected`) | `AssetGrid.tsx` | Accessibility | |
-| 10 | Errors are flattened into a single string (`"${status}: ${detail}"`); callers can't branch on `error.code`, so retryable failures (503/429) can't be distinguished from terminal ones (400/409/422), and there's no retry/backoff at all | `api/client.ts` | Correctness / Resilience | |
-| 11 | Detail-panel save has no optimistic update, no retry, and treats `409 version_conflict` the same as any other error — a generic string instead of a deliberate refetch/merge decision | `AssetDetail.tsx` (`setStatus`) | Correctness | |
-| 12 | Detail panel has no focus management — focus doesn't move into the panel on open, Escape doesn't close it, and focus isn't returned to the triggering card on close | `AssetDetail.tsx` | Accessibility | |
-| 13 | No error boundary anywhere in the app — an unexpected render error takes down the whole page with no recovery | `App.tsx` / app root | Resilience | |
-| 14 | No offline detection — writes/reads are attempted the same way regardless of connectivity, with no banner or recovery behavior | app-wide | Resilience | |
-| 15 | Status is conveyed primarily by color; `draft` has no dedicated pill color/shape distinct from the others, so status is hard to read without relying on color alone | `styles.css` | Accessibility | |
-| 16 | No `:focus-visible` styling anywhere — keyboard focus position is invisible | `styles.css` | Accessibility | |
-| 17 | Bulk-action result only reports aggregate counts ("N updated, N failed") with no indication of which assets failed or why | `App.tsx` (`applyBulkStatus`) | UX / Correctness | |
+| 1 | Bulk update sends >50 ids in one call; API rejects with `400 too_many_ids` above that cap | `App.tsx` (`applyBulkStatus`) | Correctness | Fixed (Task 3) |
+| 2 | `handleSaved` is a no-op stub — editing status in the detail panel never updates the grid, so rows go stale after a save | `App.tsx` (`handleSaved`) | Correctness | Fixed (Task 3) |
+| 3 | Every keystroke in the search box fires a request immediately — no debounce | `App.tsx` / `useAssets.ts` | Performance | Fixed (Task 1) |
+| 4 | No request cancellation and no response-ordering guard — a slow response to an earlier query can overwrite a newer one (the "type 'tra' then finish quickly" race, since short-prefix queries are deliberately slower server-side) | `useAssets.ts`, `api/client.ts` | Correctness | Fixed (Task 1) |
+| 5 | `nextCursor` is fetched but never used — the hook always shows just the first page, so most of the 12,400 assets are unreachable, and there's no pagination/infinite-scroll at all | `useAssets.ts` | Correctness / Scale | Fixed (Task 1/2) |
+| 6 | Filter/search/sort state lives only in local `useState` — lost on reload, unshareable via URL, and stale cursors from prior queries are never invalidated | `App.tsx` | Correctness | Fixed (Task 1) |
+| 7 | Every row is rendered into the DOM regardless of result size — no virtualization, so DOM/memory grow unbounded as more assets load | `AssetGrid.tsx` | Performance / Scale | Fixed (Task 2) |
+| 8 | The grid is one component, so toggling a single card's selection re-renders every rendered card | `AssetGrid.tsx` | Performance | Fixed (Task 2) |
+| 9 | Grid has no keyboard model — cards/checkboxes are only reachable via native tab order, no roving tabindex, no arrow-key navigation, no ARIA grid semantics (`role`, `aria-selected`) | `AssetGrid.tsx` | Accessibility | Left — planned for Task 5 |
+| 10 | Errors are flattened into a single string (`"${status}: ${detail}"`); callers can't branch on `error.code`, so retryable failures (503/429) can't be distinguished from terminal ones (400/409/422), and there's no retry/backoff at all | `api/client.ts` | Correctness / Resilience | Fixed (Task 1) |
+| 11 | Detail-panel save has no optimistic update, no retry, and treats `409 version_conflict` the same as any other error — a generic string instead of a deliberate refetch/merge decision | `AssetDetail.tsx` (`setStatus`) | Correctness | Fixed (Task 3) — 409 now shows a dedicated "refresh to see the latest" banner instead of a generic error |
+| 12 | Detail panel has no focus management — focus doesn't move into the panel on open, Escape doesn't close it, and focus isn't returned to the triggering card on close | `AssetDetail.tsx` | Accessibility | Left — planned for Task 5 |
+| 13 | No error boundary anywhere in the app — an unexpected render error takes down the whole page with no recovery | `App.tsx` / app root | Resilience | Left — planned for Task 4 |
+| 14 | No offline detection — writes/reads are attempted the same way regardless of connectivity, with no banner or recovery behavior | app-wide | Resilience | Left — planned for Task 4 |
+| 15 | Status is conveyed primarily by color; `draft` has no dedicated pill color/shape distinct from the others, so status is hard to read without relying on color alone | `styles.css` | Accessibility | Left — planned for Task 6 |
+| 16 | No `prefers-reduced-motion` handling anywhere — any motion added later (e.g. a loading shimmer) would run unconditionally for users who've asked their OS to reduce motion (correction: this row originally claimed missing `:focus-visible` styling, which was wrong — the baseline already had a global rule for it; verified by diffing against the original commit) | `styles.css` | Accessibility | Fixed (Task 2) |
+| 17 | Bulk-action result only reports aggregate counts ("N updated, N failed") with no indication of which assets failed or why | `App.tsx` (`applyBulkStatus`) | UX / Correctness | Fixed (Task 3) |
 
 ---
 

@@ -132,6 +132,32 @@ export function useInfiniteAssets(query: Omit<AssetQuery, 'limit' | 'cursor'>) {
     });
   }, [load]);
 
+  // Applies a local edit to one loaded asset (e.g. an optimistic bulk-status
+  // change, a rollback after a failure, or syncing the detail panel's save
+  // back into the grid) without a network round-trip. Also updates the
+  // per-signature cache so the change isn't lost if the user switches
+  // filters away and back.
+  const patchLocal = useCallback(
+    (id: string, patch: Partial<Asset>) => {
+      setState((prev) => {
+        const items = prev.items.map((a) => (a.id === id ? { ...a, ...patch } : a));
+        saveToCache(signature, { items, total: prev.total, nextCursor: prev.nextCursor });
+        return { ...prev, items };
+      });
+    },
+    [signature, saveToCache],
+  );
+
+  const itemsRef = useRef(state.items);
+  useEffect(() => {
+    itemsRef.current = state.items;
+  }, [state.items]);
+
+  // Stable identity (unlike reading `state.items` directly) so callers that
+  // memoize around it — like the bulk-status hook's snapshot function —
+  // don't need `state.items` in their own dependency arrays.
+  const getAssetById = useCallback((id: string) => itemsRef.current.find((a) => a.id === id), []);
+
   return {
     items: state.items,
     total: state.total,
@@ -139,5 +165,7 @@ export function useInfiniteAssets(query: Omit<AssetQuery, 'limit' | 'cursor'>) {
     error: state.error,
     hasMore: state.nextCursor != null,
     loadMore,
+    patchLocal,
+    getAssetById,
   };
 }

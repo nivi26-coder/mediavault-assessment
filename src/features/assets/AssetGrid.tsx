@@ -1,18 +1,24 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
 import { AssetCard } from '@/features/assets/AssetCard';
+import type { BulkFailure } from '@/features/assets/bulkStatus';
 import type { Asset } from '@/lib/types';
 
 interface Props {
   assets: Asset[];
   selectedIds: Set<string>;
   activeId: string | null;
-  onToggleSelect: (id: string) => void;
+  failuresById: Map<string, BulkFailure>;
+  onToggleSelect: (id: string, opts?: { shiftKey: boolean }) => void;
   onOpen: (id: string) => void;
   isInitialLoading?: boolean;
   hasMore: boolean;
   isLoadingMore: boolean;
   onLoadMore: () => void;
+  // Any change to this value scrolls back to the top — used for switching
+  // into/out of "view failed only," which should start from the top rather
+  // than wherever the full grid happened to be scrolled to.
+  resetScrollKey?: unknown;
 }
 
 // Matches the CSS grid's previous `minmax(220px, 1fr)` / 12px gap, now
@@ -33,12 +39,14 @@ export function AssetGrid({
   assets,
   selectedIds,
   activeId,
+  failuresById,
   onToggleSelect,
   onOpen,
   isInitialLoading,
   hasMore,
   isLoadingMore,
   onLoadMore,
+  resetScrollKey,
 }: Props) {
   // A state-backed callback ref, not a plain useRef: the grid div doesn't
   // exist on the component's first render (that render shows the loading
@@ -47,6 +55,14 @@ export function AssetGrid({
   // is attached, however many renders later that happens.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [columns, setColumns] = useState(1);
+
+  useEffect(() => {
+    scrollEl?.scrollTo({ top: 0 });
+    // Only the key matters here, not scrollEl's identity — re-running this
+    // whenever scrollEl itself changes (e.g. a re-mount) would also be fine,
+    // but isn't the point of this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetScrollKey]);
 
   useEffect(() => {
     if (!scrollEl) return;
@@ -146,6 +162,7 @@ export function AssetGrid({
                   asset={asset}
                   selected={selectedIds.has(asset.id)}
                   active={activeId === asset.id}
+                  failure={failuresById.get(asset.id)}
                   onToggleSelect={onToggleSelect}
                   onOpen={onOpen}
                 />

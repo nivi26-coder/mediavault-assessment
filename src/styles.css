@@ -105,6 +105,11 @@ button:disabled {
   font-size: 13px;
 }
 
+.selectAllLoaded {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
 .bulkbar {
   display: flex;
   gap: 8px;
@@ -113,14 +118,38 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
-.notice,
+.bulkOutcome {
+  /* Always a single line (wraps at most, never grows a block of content
+     below it) — failure detail lives on the cards themselves now, via
+     .card__failureBadge, so there's nothing here that can push the grid
+     around. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.conflictBanner {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #ecd3a2;
+  background: #fff4e0;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.conflictBanner p {
+  margin: 0 0 6px;
+}
+
 .error {
   margin: 0;
   padding: 8px 16px;
   font-size: 13px;
   border-bottom: 1px solid var(--line);
-}
-.error {
   color: var(--danger);
 }
 
@@ -235,6 +264,25 @@ button:disabled {
   left: 8px;
   width: 18px;
   height: 18px;
+}
+.card__failureBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--danger);
+  cursor: default;
+}
+.card__failureBadge--retryable {
+  background: #b7791f;
 }
 
 .pill {
