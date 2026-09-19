@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { bulkSetStatus } from '@/api/client';
 import { AssetDetail } from '@/features/assets/AssetDetail';
 import { AssetGrid } from '@/features/assets/AssetGrid';
-import { useAssets } from '@/features/assets/useAssets';
+import { useInfiniteAssets } from '@/features/assets/useInfiniteAssets';
+import { useUrlState } from '@/lib/useUrlState';
 import { statusLabel } from '@/lib/format';
 import type { Asset, AssetStatus, AssetQuery } from '@/lib/types';
 
@@ -14,16 +15,38 @@ const SORTS: Array<{ value: NonNullable<AssetQuery['sort']>; label: string }> = 
   { value: 'createdAt:desc', label: 'Newest' },
 ];
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 export function App() {
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState<AssetStatus[]>([]);
-  const [sort, setSort] = useState<NonNullable<AssetQuery['sort']>>('updatedAt:desc');
+  const [filters, setFilters] = useUrlState();
+
+  // Typing updates this immediately so the input feels live, while the URL
+  // (and therefore the actual fetch) only updates after the user pauses.
+  const [qInput, setQInput] = useState(filters.q);
+  const qDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    // Keep the input in sync when the URL changes from elsewhere (back/forward).
+    setQInput(filters.q);
+  }, [filters.q]);
+
+  function handleQChange(value: string) {
+    setQInput(value);
+    clearTimeout(qDebounceRef.current);
+    qDebounceRef.current = setTimeout(() => {
+      setFilters({ q: value }, { replace: true });
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Every keystroke sends a request. Nothing is debounced or cancelled.
-  const { items, total, loading, error } = useAssets({ q, status, sort, limit: 24 });
+  const { items, total, status, error, loadMore, hasMore } = useInfiniteAssets({
+    q: filters.q,
+    status: filters.status,
+    sort: filters.sort,
+  });
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -60,10 +83,13 @@ export function App() {
           className="search"
           type="search"
           placeholder="Search assets"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          value={qInput}
+          onChange={(e) => handleQChange(e.target.value)}
         />
-        <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+        <select
+          value={filters.sort}
+          onChange={(e) => setFilters({ sort: e.target.value as typeof filters.sort })}
+        >
           {SORTS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -77,18 +103,20 @@ export function App() {
           <label key={s}>
             <input
               type="checkbox"
-              checked={status.includes(s)}
+              checked={filters.status.includes(s)}
               onChange={(e) =>
-                setStatus((prev) =>
-                  e.target.checked ? [...prev, s] : prev.filter((x) => x !== s),
-                )
+                setFilters({
+                  status: e.target.checked
+                    ? [...filters.status, s]
+                    : filters.status.filter((x) => x !== s),
+                })
               }
             />
             {statusLabel(s)}
           </label>
         ))}
-        <span className="muted">
-          {loading ? 'Loading…' : `${items.length} of ${total.toLocaleString()} shown`}
+        <span className="muted" role="status" aria-live="polite">
+          {status === 'loading' ? 'Loading…' : `${items.length} of ${total.toLocaleString()} shown`}
         </span>
       </div>
 
@@ -105,16 +133,28 @@ export function App() {
       )}
 
       {notice && <p className="notice">{notice}</p>}
-      {error && <p className="error">{error}</p>}
+      {status === 'error' && error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
 
       <main className="content">
-        <AssetGrid
-          assets={items}
-          selectedIds={selectedIds}
-          activeId={activeId}
-          onToggleSelect={toggleSelect}
-          onOpen={setActiveId}
-        />
+        <div className="listColumn">
+          <AssetGrid
+            assets={items}
+            selectedIds={selectedIds}
+            activeId={activeId}
+            onToggleSelect={toggleSelect}
+            onOpen={setActiveId}
+            isInitialLoading={status === 'loading' && items.length === 0}
+          />
+          {hasMore && items.length > 0 && (
+            <button className="loadMore" onClick={loadMore} disabled={status === 'loading-more'}>
+              {status === 'loading-more' ? 'Loading more…' : 'Load more'}
+            </button>
+          )}
+        </div>
         {activeId && (
           <AssetDetail id={activeId} onClose={() => setActiveId(null)} onSaved={handleSaved} />
         )}

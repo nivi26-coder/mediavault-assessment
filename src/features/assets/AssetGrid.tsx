@@ -8,13 +8,22 @@ interface Props {
   activeId: string | null;
   onToggleSelect: (id: string) => void;
   onOpen: (id: string) => void;
+  isInitialLoading?: boolean;
 }
 
 /**
  * Baseline grid. Renders every row it is given, re-renders every card on any
  * selection change, and is not reachable by keyboard.
  */
-export function AssetGrid({ assets, selectedIds, activeId, onToggleSelect, onOpen }: Props) {
+export function AssetGrid({ assets, selectedIds, activeId, onToggleSelect, onOpen, isInitialLoading }: Props) {
+  if (isInitialLoading) {
+    return (
+      <div className="empty" role="status" aria-live="polite">
+        <p>Loading assets…</p>
+      </div>
+    );
+  }
+
   if (assets.length === 0) {
     return (
       <div className="empty">
