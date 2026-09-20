@@ -38,3 +38,19 @@ const STATUS_LABELS: Record<AssetStatus, string> = {
 export function statusLabel(status: AssetStatus): string {
   return STATUS_LABELS[status];
 }
+
+// A glyph per status, shown alongside (never instead of) the color and the
+// text label — so the four statuses stay distinguishable for someone who
+// can't tell the colors apart, and read as a progression (hollow → half →
+// checked → put away) rather than four arbitrary hues. Always rendered
+// `aria-hidden`; the pill's own text is what's announced to screen readers.
+const STATUS_ICONS: Record<AssetStatus, string> = {
+  draft: '○',
+  in_review: '◐',
+  approved: '✓',
+  archived: '▾',
+};
+
+export function statusIcon(status: AssetStatus): string {
+  return STATUS_ICONS[status];
+}

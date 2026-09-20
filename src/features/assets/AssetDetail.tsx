@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, getAsset, thumbnailUrl, updateAsset } from '@/api/client';
 import { toUserMessage } from '@/lib/errorCopy';
-import { formatBytes, formatDate, formatDuration, statusLabel } from '@/lib/format';
+import { formatBytes, formatDate, formatDuration, statusIcon, statusLabel } from '@/lib/format';
 import type { Asset, AssetStatus } from '@/lib/types';
 
 const STATUSES: AssetStatus[] = ['draft', 'in_review', 'approved', 'archived'];
@@ -104,6 +104,12 @@ export function AssetDetail({ id, width, onClose, onSaved }: Props) {
         <div className="panel__body">
           <img className="panel__thumb" src={thumbnailUrl(asset.id)} alt="" />
           <h3>{asset.name}</h3>
+          <span className={`pill pill--${asset.status}`}>
+            <span className="pill__icon" aria-hidden="true">
+              {statusIcon(asset.status)}
+            </span>
+            {statusLabel(asset.status)}
+          </span>
           <dl className="facts">
             <dt>Id</dt>
             <dd>{asset.id}</dd>
@@ -141,7 +147,7 @@ export function AssetDetail({ id, width, onClose, onSaved }: Props) {
             </ul>
           )}
 
-          <p className="muted">Status</p>
+          <p className="muted">Change status</p>
           <div className="row">
             {STATUSES.map((status) => (
               <button
@@ -149,7 +155,7 @@ export function AssetDetail({ id, width, onClose, onSaved }: Props) {
                 disabled={saving || conflict || status === asset.status}
                 onClick={() => setStatus(status)}
               >
-                {statusLabel(status)}
+                <span aria-hidden="true">{statusIcon(status)}</span> {statusLabel(status)}
               </button>
             ))}
           </div>

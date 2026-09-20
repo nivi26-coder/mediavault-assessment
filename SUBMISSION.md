@@ -40,7 +40,7 @@ Roughly, and how you split it.
 | 12 | Detail panel has no focus management — focus doesn't move into the panel on open, Escape doesn't close it, and focus isn't returned to the triggering card on close | `AssetDetail.tsx` | Accessibility | Fixed (Task 5) |
 | 13 | No error boundary anywhere in the app — an unexpected render error takes down the whole page with no recovery | `App.tsx` / app root | Resilience | Fixed (Task 4) |
 | 14 | No offline detection — writes/reads are attempted the same way regardless of connectivity, with no banner or recovery behavior | app-wide | Resilience | Fixed (Task 4) |
-| 15 | Status is conveyed primarily by color; `draft` has no dedicated pill color/shape distinct from the others, so status is hard to read without relying on color alone | `styles.css` | Accessibility | Left — planned for Task 6 |
+| 15 | Status is conveyed primarily by color; `draft` has no dedicated pill color/shape distinct from the others, so status is hard to read without relying on color alone | `styles.css` | Accessibility | Fixed (Task 6) |
 | 16 | No `prefers-reduced-motion` handling anywhere — any motion added later (e.g. a loading shimmer) would run unconditionally for users who've asked their OS to reduce motion (correction: this row originally claimed missing `:focus-visible` styling, which was wrong — the baseline already had a global rule for it; verified by diffing against the original commit) | `styles.css` | Accessibility | Fixed (Task 2) |
 | 17 | Bulk-action result only reports aggregate counts ("N updated, N failed") with no indication of which assets failed or why | `App.tsx` (`applyBulkStatus`) | UX / Correctness | Fixed (Task 3) |
 
@@ -52,16 +52,74 @@ For each significant choice: what you did, what you rejected, and why. Three to
 six of these is about right.
 
 **Data fetching and caching**
+Hand-rolled (`src/api/client.ts`, `useInfiniteAssets.ts`) — no TanStack
+Query/SWR. Rejected them deliberately: Tasks 1/3/4 specifically exist to
+assess hand-reasoning about cancellation, de-duplication, retry/backoff and
+optimistic rollback, and a library would do all of that invisibly, hiding
+exactly the mechanics being graded. Built a sequence-numbered request
+tracker, a small in-flight GET de-dup map, and a per-filter-combination
+session cache instead. Traded some robustness (no automatic cache
+invalidation across tabs, no background refetch-on-focus) for code that's
+fully explainable line by line.
 
 **Stale response handling**
+Two layers, not one: the previous request is actively aborted
+(`AbortController`) *and* every response carries a sequence number checked
+against the latest one issued before being applied. Rejected relying on
+cancellation alone — an abort doesn't guarantee a response that already
+left the network gets discarded before it resolves, so the sequence check
+is the actual correctness guarantee; the abort is there to save bandwidth
+and rate-limit budget, not to be the sole defense.
 
 **Virtualization approach**
+`@tanstack/react-virtual` — explicitly on README's allowed list for
+virtualization. Rejected hand-rolling the windowing math itself: it's a
+narrowly-scoped, well-tested primitive (just "which rows are visible,"
+nothing about data-fetching or selection), so using it doesn't hide any of
+the logic actually being assessed, and it freed real time for the harder
+parts (roving-tabindex keyboard nav layered on top of it, the two
+column-count-remount bugs it surfaced — see `PROGRESS.md`). Did not use a
+prebuilt data grid (AG Grid/MUI DataGrid/etc.) — explicitly disallowed by
+the rules, and the whole point of Tasks 2/3/5 is building that grid
+behavior by hand.
 
 **Optimistic updates and rollback**
+Bulk status changes apply to every selected asset immediately, before any
+network response, then roll back only the specific assets a `207` response
+reports as failed — successes stay changed, nothing else is touched.
+Rejected waiting for server confirmation before updating the UI: on a
+selection of hundreds of assets under real latency, that would mean staring
+at an unresponsive-feeling UI for seconds with no feedback at all.
 
 **Retry and backoff policy**
+Exponential backoff with jitter, capped at 4 attempts, honoring
+`Retry-After` when present, and — specifically for network errors while
+actually offline — waiting for the browser's real `online` event instead of
+blind timed retries. Retryability is computed structurally from the HTTP
+status code (`429`/`503`/5xx/network-failure → retryable;
+`400`/`409`/`422` → never), not from matching on error message text.
+Rejected a fixed-interval retry: under real chaos (503s, rate limiting),
+retrying on a strict timer either hammers a already-struggling server or
+retries too slowly after a real fix.
 
 **State placement and URL sync**
+Filters (`q`, `status`, `sort`) live in the URL via a small custom
+`useUrlState` hook — no router, no global state library (Zustand/Redux/
+Jotai). Rejected both: this is a single-screen app with one filter bar, so
+a router would add route-matching machinery for a page that has no routes,
+and a global store would add a whole state-management layer for state that
+only ever has one reader (the filter bar) and one writer (the same filter
+bar). Selection, focus position, and panel state are local `useState`/refs
+for the same reason — nothing here is shared across distant parts of the
+tree that would justify lifting it into a store.
+
+**On libraries generally:** the only runtime dependency added beyond
+React itself is `@tanstack/react-virtual` (virtualization, explicitly
+allowed). No data-fetching library, no state-management library, no router,
+no headless focus-management library (roving tabindex, focus-trap-free
+detail-panel focus management, and Escape handling are all hand-built in
+`AssetGrid.tsx`/`AssetDetail.tsx`/`App.tsx`) — each of those "wrote it
+myself" choices is explained above rather than just left unexplained.
 
 ---
 
@@ -152,18 +210,63 @@ claiming a pass I didn't observe.
 
 ## Interface decisions
 
-Three or four sentences: what you were optimising for, and the decisions that
-follow from it. Then briefly:
+I optimized for a reviewer being able to trust the interface at a glance —
+scanning hundreds of cards, knowing instantly what's selected, what's
+happening, and what to do next, without relying on color vision or careful
+reading. That meant every state (selection, active card, status) needed a
+second, non-color signal, every asynchronous state (loading/empty/error/
+offline/partial-failure) needed to be deliberately designed rather than left
+as an implicit blank, and every number/contrast claim needed to actually be
+checked rather than eyeballed. Restraint was a deliberate choice too — no
+icons or motion beyond what serves a specific legibility purpose (the status
+glyphs, the loading shimmer), no illustration, no dark mode, matching what
+the brief asked for.
 
-- **Visual system.** Your colour, spacing and type decisions, and where they live.
-- **Status treatment.** How the four statuses read as a progression, and how they
-  stay distinguishable without relying on colour.
-- **States.** What you did with loading, empty, error, offline and partial
-  failure.
-- **Contrast.** What you checked against, and with what.
-- **Copy.** Any user-facing message you rewrote and why.
+- **Visual system.** A small token set in `styles.css`'s `:root` — two text
+  colors (`--ink`, `--ink-soft`), two border tiers (`--line` for plain
+  dividers, `--line-interactive` for anything that has to read as an actual
+  control boundary and therefore needs 3:1 contrast), a 4px spacing scale,
+  a 5-step type scale, and one accent color used consistently for focus,
+  links, and the primary selection state. Status colors are their own
+  small palette, described below.
+- **Status treatment.** The four statuses read as a progression by
+  increasing visual weight, not four arbitrary hues: `draft` is a hollow,
+  dashed-border pill (nothing has happened yet); `in review` is a filled
+  amber pill (in motion); `approved` is a filled green pill (done);
+  `archived` is a muted gray pill (put away). Each also carries its own
+  glyph (`○ ◐ ✓ ▾`) rendered `aria-hidden` alongside the color, so the
+  distinction never depends on telling the colors apart — verified by
+  checking each status pill's actual rendered look, not just assuming the
+  glyph fallback would work. Selection and "currently open" are likewise
+  never color-only: selection's primary signal is the checkbox's own
+  checked/unchecked shape, and the currently-open card gets a real outline
+  ring (a shape/thickness change), not just a border-color swap.
+- **States.** Loading uses skeleton cards shaped like real cards, not a
+  spinner. Empty and error each have their own distinct, clearly-labeled
+  message with a next step ("clear the search box or widen the status
+  filter"). Offline is a persistent banner, not a toast that could be
+  missed. Partial bulk failure shows counts grouped by reason in one
+  bounded line, plus a badge directly on each affected card (see
+  `PROGRESS.md` for why that replaced an earlier expandable-list design).
+  The bulk action bar gets its own tinted background so it reads as a
+  distinct, temporary mode rather than blending into the page.
+- **Contrast.** Every color pair was run through an actual WCAG relative-luminance
+  contrast calculator (a small Node script, not a visual estimate) against
+  its real usage — text on its real background, not swatches in isolation.
+  All text pairs clear 4.5:1 (most well above); UI-component borders that
+  need 3:1 (checkbox/input borders) use the darker `--line-interactive`
+  token specifically because the softer `--line` divider color measured
+  only ~1.3:1 and would have failed that check. One color (the amber
+  "retryable" badge) was caught failing at 3.64:1 during this check and
+  darkened until it cleared 4.5:1 — documented in `PROGRESS.md`.
+- **Copy.** Every user-facing error goes through `errorCopy.ts`'s
+  `toUserMessage`, mapping API codes to plain sentences — nothing like
+  `429: Too many requests in the last 10 seconds.` ever reaches the screen.
+  Empty/loading/offline/conflict states were all written as complete,
+  specific sentences telling the user what happened and, where relevant,
+  what to do about it, rather than single words like "Empty" or "Error."
 
-Screenshots in the repo are welcome — link them here.
+Screenshots: [grid](docs/screenshots/grid.png), [detail panel with active-card ring](docs/screenshots/detail-panel.png), [narrow viewport](docs/screenshots/narrow-viewport.png).
 
 ---
 

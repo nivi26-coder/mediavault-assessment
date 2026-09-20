@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { thumbnailUrl } from '@/api/client';
 import { failureReason, type BulkFailure } from '@/features/assets/bulkStatus';
-import { formatBytes, formatDate, statusLabel } from '@/lib/format';
+import { formatBytes, formatDate, statusIcon, statusLabel } from '@/lib/format';
 import type { Asset } from '@/lib/types';
 
 interface Props {
@@ -77,7 +77,12 @@ function AssetCardImpl({
         <p className="muted">
           {asset.kind} · {formatBytes(asset.sizeBytes)} · {formatDate(asset.updatedAt)}
         </p>
-        <span className={`pill pill--${asset.status}`}>{statusLabel(asset.status)}</span>
+        <span className={`pill pill--${asset.status}`}>
+          <span className="pill__icon" aria-hidden="true">
+            {statusIcon(asset.status)}
+          </span>
+          {statusLabel(asset.status)}
+        </span>
       </div>
       <input
         type="checkbox"

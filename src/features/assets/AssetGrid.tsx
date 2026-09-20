@@ -25,7 +25,7 @@ interface Props {
 // computed in JS because a virtualizer needs to know row structure ahead of
 // rendering (real CSS grid auto-fill can't be virtualized directly).
 const MIN_CARD_WIDTH = 220;
-const GAP = 12;
+const GAP = 16;
 const ROW_ESTIMATE = 230;
 
 /**
