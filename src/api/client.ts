@@ -60,6 +60,35 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+// Waits for the browser to report real connectivity instead of a blind
+// timed backoff, when we already know we're offline — retrying every few
+// seconds against a network interface that's known to be down is exactly
+// the "hammering" Task 4 asks us not to do. Falls back to a normal timed
+// wait once online (or if we were never sure we were offline to begin with).
+function waitForConnectivity(minDelayMs: number, signal?: AbortSignal): Promise<void> {
+  if (navigator.onLine) return sleep(minDelayMs, signal);
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    function onOnline() {
+      cleanup();
+      resolve();
+    }
+    function onAbort() {
+      cleanup();
+      reject(new DOMException('Aborted', 'AbortError'));
+    }
+    function cleanup() {
+      window.removeEventListener('online', onOnline);
+      signal?.removeEventListener('abort', onAbort);
+    }
+    window.addEventListener('online', onOnline);
+    signal?.addEventListener('abort', onAbort);
+  });
+}
+
 function toSearchParams(query: AssetQuery): string {
   const params = new URLSearchParams();
   if (query.q) params.set('q', query.q);
@@ -128,7 +157,11 @@ async function withRetry<T>(fn: (signal?: AbortSignal) => Promise<T>, signal?: A
       const delayMs =
         err.retryAfterSeconds != null ? Math.max(err.retryAfterSeconds * 1000, computedDelay) : computedDelay;
 
-      await sleep(delayMs, signal);
+      if (err.code === 'network_error') {
+        await waitForConnectivity(delayMs, signal);
+      } else {
+        await sleep(delayMs, signal);
+      }
     }
   }
 }

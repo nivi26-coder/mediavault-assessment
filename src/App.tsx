@@ -4,8 +4,10 @@ import { AssetGrid } from '@/features/assets/AssetGrid';
 import { groupFailuresByReason, shortFailureReason, type BulkFailure } from '@/features/assets/bulkStatus';
 import { useBulkStatus } from '@/features/assets/useBulkStatus';
 import { useInfiniteAssets } from '@/features/assets/useInfiniteAssets';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useUrlState } from '@/lib/useUrlState';
 import { useResizablePanel } from '@/lib/useResizablePanel';
+import { useOnlineStatus } from '@/lib/useOnlineStatus';
 import { statusLabel } from '@/lib/format';
 import type { Asset, AssetStatus, AssetQuery } from '@/lib/types';
 
@@ -20,6 +22,7 @@ const SORTS: Array<{ value: NonNullable<AssetQuery['sort']>; label: string }> = 
 const SEARCH_DEBOUNCE_MS = 300;
 
 export function App() {
+  const isOnline = useOnlineStatus();
   const [filters, setFilters] = useUrlState();
 
   // Typing updates this immediately so the input feels live, while the URL
@@ -181,6 +184,11 @@ export function App() {
 
   return (
     <div className="app">
+      {!isOnline && (
+        <p className="offlineBanner" role="status" aria-live="polite">
+          You're offline. We'll keep trying and pick back up automatically once your connection returns.
+        </p>
+      )}
       <header className="topbar">
         <h1>MediaVault</h1>
         <input
@@ -283,19 +291,21 @@ export function App() {
 
       <main className="content">
         <div className="listColumn">
-          <AssetGrid
-            assets={displayedItems}
-            selectedIds={selectedIds}
-            activeId={activeId}
-            failuresById={failuresById}
-            onToggleSelect={toggleSelect}
-            onOpen={setActiveId}
-            isInitialLoading={status === 'loading' && items.length === 0}
-            hasMore={showFailedOnly ? false : hasMore}
-            isLoadingMore={status === 'loading-more'}
-            onLoadMore={showFailedOnly ? () => {} : loadMore}
-            resetScrollKey={showFailedOnly}
-          />
+          <ErrorBoundary label="the asset grid">
+            <AssetGrid
+              assets={displayedItems}
+              selectedIds={selectedIds}
+              activeId={activeId}
+              failuresById={failuresById}
+              onToggleSelect={toggleSelect}
+              onOpen={setActiveId}
+              isInitialLoading={status === 'loading' && items.length === 0}
+              hasMore={showFailedOnly ? false : hasMore}
+              isLoadingMore={status === 'loading-more'}
+              onLoadMore={showFailedOnly ? () => {} : loadMore}
+              resetScrollKey={showFailedOnly}
+            />
+          </ErrorBoundary>
         </div>
         {activeId && (
           <>
@@ -311,12 +321,14 @@ export function App() {
               onMouseDown={panel.startResize}
               onKeyDown={panel.handleKeyDown}
             />
-            <AssetDetail
-              id={activeId}
-              width={panel.width}
-              onClose={() => setActiveId(null)}
-              onSaved={handleSaved}
-            />
+            <ErrorBoundary label="the asset detail panel">
+              <AssetDetail
+                id={activeId}
+                width={panel.width}
+                onClose={() => setActiveId(null)}
+                onSaved={handleSaved}
+              />
+            </ErrorBoundary>
           </>
         )}
       </main>

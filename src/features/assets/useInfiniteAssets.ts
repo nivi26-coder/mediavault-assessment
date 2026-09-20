@@ -75,8 +75,11 @@ export function useInfiniteAssets(query: Omit<AssetQuery, 'limit' | 'cursor'>) {
     }
   }, []);
 
+  const lastCursorRef = useRef<string | null>(null);
+
   const load = useCallback(
     (cursor: string | null) => {
+      lastCursorRef.current = cursor;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -123,6 +126,23 @@ export function useInfiniteAssets(query: Omit<AssetQuery, 'limit' | 'cursor'>) {
     load(null);
     return () => abortRef.current?.abort();
   }, [signature, load]);
+
+  // If a fetch already exhausted its own retry budget (see client.ts) and
+  // settled into an error state while genuinely offline, recover as soon as
+  // real connectivity returns — retrying whichever page it last attempted,
+  // not restarting from scratch and losing pages already loaded.
+  const statusRef = useRef(state.status);
+  useEffect(() => {
+    statusRef.current = state.status;
+  }, [state.status]);
+
+  useEffect(() => {
+    function handleOnline() {
+      if (statusRef.current === 'error') load(lastCursorRef.current);
+    }
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [load]);
 
   const loadMore = useCallback(() => {
     setState((prev) => {
