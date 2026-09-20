@@ -34,10 +34,10 @@ Roughly, and how you split it.
 | 6 | Filter/search/sort state lives only in local `useState` — lost on reload, unshareable via URL, and stale cursors from prior queries are never invalidated | `App.tsx` | Correctness | Fixed (Task 1) |
 | 7 | Every row is rendered into the DOM regardless of result size — no virtualization, so DOM/memory grow unbounded as more assets load | `AssetGrid.tsx` | Performance / Scale | Fixed (Task 2) |
 | 8 | The grid is one component, so toggling a single card's selection re-renders every rendered card | `AssetGrid.tsx` | Performance | Fixed (Task 2) |
-| 9 | Grid has no keyboard model — cards/checkboxes are only reachable via native tab order, no roving tabindex, no arrow-key navigation, no ARIA grid semantics (`role`, `aria-selected`) | `AssetGrid.tsx` | Accessibility | Left — planned for Task 5 |
+| 9 | Grid has no keyboard model — cards/checkboxes are only reachable via native tab order, no roving tabindex, no arrow-key navigation, no ARIA grid semantics (`role`, `aria-selected`) | `AssetGrid.tsx` | Accessibility | Fixed (Task 5) |
 | 10 | Errors are flattened into a single string (`"${status}: ${detail}"`); callers can't branch on `error.code`, so retryable failures (503/429) can't be distinguished from terminal ones (400/409/422), and there's no retry/backoff at all | `api/client.ts` | Correctness / Resilience | Fixed (Task 1) |
 | 11 | Detail-panel save has no optimistic update, no retry, and treats `409 version_conflict` the same as any other error — a generic string instead of a deliberate refetch/merge decision | `AssetDetail.tsx` (`setStatus`) | Correctness | Fixed (Task 3) — 409 now shows a dedicated "refresh to see the latest" banner instead of a generic error |
-| 12 | Detail panel has no focus management — focus doesn't move into the panel on open, Escape doesn't close it, and focus isn't returned to the triggering card on close | `AssetDetail.tsx` | Accessibility | Left — planned for Task 5 |
+| 12 | Detail panel has no focus management — focus doesn't move into the panel on open, Escape doesn't close it, and focus isn't returned to the triggering card on close | `AssetDetail.tsx` | Accessibility | Fixed (Task 5) |
 | 13 | No error boundary anywhere in the app — an unexpected render error takes down the whole page with no recovery | `App.tsx` / app root | Resilience | Fixed (Task 4) |
 | 14 | No offline detection — writes/reads are attempted the same way regardless of connectivity, with no banner or recovery behavior | app-wide | Resilience | Fixed (Task 4) |
 | 15 | Status is conveyed primarily by color; `draft` has no dedicated pill color/shape distinct from the others, so status is hard to read without relying on color alone | `styles.css` | Accessibility | Left — planned for Task 6 |
@@ -101,9 +101,52 @@ found and what the fix actually was.
 
 ## Accessibility
 
-- Keyboard model you implemented, in one paragraph.
-- How you tested it, including any screen reader.
-- Known gaps.
+**Keyboard model.** The asset grid uses a roving tabindex, not one tab stop
+per card — exactly one card is `tabIndex=0` at a time (the rest are `-1`),
+so Tab enters and leaves the grid in a single step regardless of how many
+thousand assets are loaded. Arrow keys move that position (Up/Down by a
+full row, Left/Right by one card), scrolling the virtualized list to the
+target and imperatively focusing the real DOM node once it exists. Enter
+opens the detail panel for the focused card; Space toggles its selection;
+Shift+Arrow moves focus and extends the selection at the same time (an
+incremental range grow, not a single anchor-to-target jump like shift-click
+— see `PROGRESS.md` for that trade-off). Opening the panel moves focus into
+it immediately; Escape closes it and returns focus to the exact card that
+opened it, looked up fresh by asset id rather than a captured DOM reference
+(virtualization can remount a card under a different row when the column
+count changes, which happens every time the panel opens/closes and narrows
+or widens the grid — see `PROGRESS.md` for the two real bugs this caused
+and how they were fixed). The grid has `role="grid"` /
+`aria-multiselectable`, rows have `role="row"`, and each card is a
+`role="gridcell"` with `aria-selected` reflecting real selection state —
+not just a checkbox buried inside it. Checkboxes have accessible names
+(`aria-label`) but are removed from the tab order (`tabIndex={-1}`) since
+Space on the card already toggles them — a second native tab stop per card
+would be a second "12,400 tab stops" problem, just smaller.
+
+**How tested.** Verified with real keyboard interaction in a live browser —
+Tab into the grid, arrow through it, Space/Enter/Shift+Arrow, open and
+close the detail panel with Escape, confirmed focus landed exactly where
+expected at each step (including the two remount bugs above, both caught
+this way, not by reading the code). **I did not run an actual screen
+reader** (NVDA/JAWS/VoiceOver) against this — ARIA roles/states and live
+regions are implemented per spec and checked via the accessibility tree in
+Chrome DevTools, but not verified by ear. Saying so directly rather than
+claiming a pass I didn't observe.
+
+**Known gaps.**
+- No screen reader was actually run (see above).
+- Shift+Arrow range selection grows incrementally in the direction you're
+  moving; reversing direction extends from the most recent position rather
+  than snapping back to a single fixed anchor. Documented trade-off, not
+  an oversight — see `PROGRESS.md`.
+- When a filtered/emptied grid has no `.grid` element to fall back to (the
+  "Nothing matches" empty state), closing an open detail panel whose opener
+  no longer exists leaves focus wherever it last legitimately was (e.g. the
+  search box) rather than moving it to the empty-state message itself. Not
+  a lost/detached-node case, just not actively redirected either.
+- No dedicated "skip to grid" link or landmark navigation beyond what the
+  native `<aside>`/`<header>` elements already provide.
 
 ---
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, getAsset, thumbnailUrl, updateAsset } from '@/api/client';
 import { toUserMessage } from '@/lib/errorCopy';
 import { formatBytes, formatDate, formatDuration, statusLabel } from '@/lib/format';
@@ -23,6 +23,7 @@ export function AssetDetail({ id, width, onClose, onSaved }: Props) {
   // let the user decide again," which is a different UI (a banner + refresh
   // action, not a dead-end message).
   const [conflict, setConflict] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setAsset(null);
@@ -32,6 +33,17 @@ export function AssetDetail({ id, width, onClose, onSaved }: Props) {
       .then(setAsset)
       .catch((err: unknown) => setError(toUserMessage(err)));
   }, [id]);
+
+  // Moves focus into the panel every time it opens for a (possibly
+  // different) asset — the panel itself, not a specific button inside it,
+  // since its content isn't loaded yet at this point.
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, [id]);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') onClose();
+  }
 
   async function setStatus(status: AssetStatus) {
     if (!asset) return;
@@ -66,7 +78,14 @@ export function AssetDetail({ id, width, onClose, onSaved }: Props) {
   }
 
   return (
-    <aside className="panel" style={{ width }}>
+    <aside
+      className="panel"
+      style={{ width }}
+      aria-label="Asset detail"
+      tabIndex={-1}
+      ref={panelRef}
+      onKeyDown={handleKeyDown}
+    >
       <div className="panel__head">
         <h2>Asset detail</h2>
         <button onClick={onClose}>Close</button>

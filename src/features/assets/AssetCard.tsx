@@ -6,11 +6,18 @@ import type { Asset } from '@/lib/types';
 
 interface Props {
   asset: Asset;
+  index: number;
+  // Roving tabindex: only the one card whose index matches the grid's
+  // current focus position is a real tab stop (`tabIndex=0`); every other
+  // card is `-1` so Tab enters/leaves the grid in one step regardless of
+  // how many thousand assets are loaded.
+  tabbable: boolean;
   selected: boolean;
   active: boolean;
   failure?: BulkFailure;
   onToggleSelect: (id: string, opts?: { shiftKey: boolean }) => void;
   onOpen: (id: string) => void;
+  onFocusCard: (index: number) => void;
 }
 
 /**
@@ -18,7 +25,17 @@ interface Props {
  * (`selected`/`active` booleans, not the whole selection Set) so toggling
  * one card's selection doesn't re-render every other card in the grid.
  */
-function AssetCardImpl({ asset, selected, active, failure, onToggleSelect, onOpen }: Props) {
+function AssetCardImpl({
+  asset,
+  index,
+  tabbable,
+  selected,
+  active,
+  failure,
+  onToggleSelect,
+  onOpen,
+  onFocusCard,
+}: Props) {
   // Skip the network request entirely for the ~4% of assets with no
   // thumbnail, and fall back to the same placeholder if a request for one
   // that's supposed to exist still 404s. The placeholder reuses the image
@@ -29,7 +46,17 @@ function AssetCardImpl({ asset, selected, active, failure, onToggleSelect, onOpe
   return (
     <div
       className={'card' + (selected ? ' card--selected' : '') + (active ? ' card--active' : '')}
+      role="gridcell"
+      aria-selected={selected}
+      aria-label={`${asset.name}, ${statusLabel(asset.status)}`}
+      data-asset-index={index}
+      data-asset-id={asset.id}
+      tabIndex={tabbable ? 0 : -1}
       onClick={() => onOpen(asset.id)}
+      // Keeps the grid's roving focus position in sync no matter how a card
+      // gets focused — clicking it with a mouse counts the same as arriving
+      // via arrow keys.
+      onFocus={() => onFocusCard(index)}
     >
       {showThumb ? (
         <img
@@ -57,6 +84,11 @@ function AssetCardImpl({ asset, selected, active, failure, onToggleSelect, onOpe
         className="card__check"
         checked={selected}
         aria-label={`Select ${asset.name}`}
+        // Not part of the tab order (see `tabbable` above on the card
+        // itself) — Space on the focused card already toggles selection, so
+        // this checkbox would otherwise be a second, redundant tab stop per
+        // card. Still fully clickable with a mouse.
+        tabIndex={-1}
         // Click, not change: a checkbox's change event doesn't reliably
         // carry shiftKey, but its click event does — needed for shift-click
         // range selection. preventDefault stops the native check toggle so

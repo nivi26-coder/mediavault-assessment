@@ -47,6 +47,63 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const panel = useResizablePanel(340, 280, 640);
 
+  // Remembers which asset was open, so closing can return focus to its
+  // card — looked up by id at close time, not captured as a DOM node up
+  // front. The card that triggers an open is also whatever row the grid
+  // narrowing (the panel appearing) reassigns it to, and a virtualized
+  // row's assets are recomputed per column count: an asset can end up
+  // under a completely different row *element* than the one it opened
+  // from. React only reuses a DOM node via `key` among siblings under the
+  // same parent, so moving row parents like that unmounts and remounts the
+  // card — a captured `document.activeElement` reference goes stale almost
+  // immediately. Re-querying by asset id at close time sidesteps that.
+  const openerAssetIdRef = useRef<string | null>(null);
+  const openDetail = useCallback((id: string) => {
+    openerAssetIdRef.current = id;
+    setActiveId(id);
+  }, []);
+  const closeDetail = useCallback(() => {
+    setActiveId(null);
+    // Polls for up to ~650ms, not just a frame or two: the panel closing
+    // widens the grid back out, which changes the column count via its own
+    // ResizeObserver, which can cascade through a few more render/effect
+    // cycles (recompute columns → re-render rows → re-anchor scroll → the
+    // virtualizer settling) before it's done — and each of those steps can
+    // repeat the same row-remount-on-column-change issue, stealing focus
+    // back to <body> even after we've successfully focused the target once.
+    // A single retry or two isn't enough to reliably outlast that chain, so
+    // this keeps reasserting focus until it's held for two consecutive
+    // checks in a row (not just "looked" stuck for one instant, which is
+    // what let the first version of this fix report false success).
+    let consecutiveHolds = 0;
+    let elapsedMs = 0;
+    const POLL_MS = 50;
+    const MAX_MS = 650;
+
+    function poll() {
+      const id = openerAssetIdRef.current;
+      const el = id ? document.querySelector<HTMLElement>(`[data-asset-id="${id}"]`) : null;
+      // The opener's row can be gone entirely (filtered out, scrolled far
+      // enough away that it's outside the virtualizer's overscan window) —
+      // falling back to the grid container itself instead of leaving focus
+      // stranded on a detached node or dropped entirely.
+      const target = el ?? document.querySelector<HTMLElement>('.grid');
+
+      if (document.activeElement === target) {
+        consecutiveHolds++;
+      } else {
+        consecutiveHolds = 0;
+        target?.focus();
+      }
+
+      elapsedMs += POLL_MS;
+      if (consecutiveHolds < 2 && elapsedMs < MAX_MS) {
+        setTimeout(poll, POLL_MS);
+      }
+    }
+    requestAnimationFrame(poll);
+  }, []);
+
   const { items, total, status, error, loadMore, hasMore, patchLocal, getAssetById } = useInfiniteAssets({
     q: filters.q,
     status: filters.status,
@@ -298,7 +355,7 @@ export function App() {
               activeId={activeId}
               failuresById={failuresById}
               onToggleSelect={toggleSelect}
-              onOpen={setActiveId}
+              onOpen={openDetail}
               isInitialLoading={status === 'loading' && items.length === 0}
               hasMore={showFailedOnly ? false : hasMore}
               isLoadingMore={status === 'loading-more'}
@@ -325,7 +382,7 @@ export function App() {
               <AssetDetail
                 id={activeId}
                 width={panel.width}
-                onClose={() => setActiveId(null)}
+                onClose={closeDetail}
                 onSaved={handleSaved}
               />
             </ErrorBoundary>

@@ -34,6 +34,13 @@ const ROW_ESTIMATE = 230;
  * Cards are memoized (`AssetCard`) and receive primitive `selected`/`active`
  * props, so toggling one card's selection doesn't re-render its neighbors.
  * Approaching the last rendered row triggers `onLoadMore` automatically.
+ *
+ * Keyboard model: a roving tabindex, not one tab stop per card (12,400 tab
+ * stops isn't an option). Exactly one card is `tabIndex=0` at a time — the
+ * rest are `-1` — and arrow keys move that "current" position, scrolling the
+ * virtualizer to it and imperatively focusing the real DOM node once it
+ * mounts (a virtualized row may not exist in the DOM yet when focus moves to
+ * it, unlike a normal fully-rendered list).
  */
 export function AssetGrid({
   assets,
@@ -117,6 +124,84 @@ export function AssetGrid({
     }
   }, [lastVirtualRow?.index, rowCount, hasMore, isLoadingMore, onLoadMore]);
 
+  // --- Roving tabindex ---
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  // Clamped via Math.min at read time (not reset to 0 outright) so a
+  // shrinking list (a filter removing rows) doesn't fling focus back to the
+  // top — it just settles on the new last item if the old position no
+  // longer exists.
+  const clampedFocusedIndex = Math.min(focusedIndex, Math.max(assets.length - 1, 0));
+
+  // Moves real DOM focus to the target card once it exists. A virtualized
+  // row might not be mounted yet right after `scrollToIndex` — one retry
+  // via requestAnimationFrame covers that without a hard-coded delay.
+  function focusCardAt(index: number) {
+    function tryFocus(attempt: number) {
+      const el = scrollEl?.querySelector<HTMLElement>(`[data-asset-index="${index}"]`);
+      if (el) {
+        el.focus();
+      } else if (attempt === 0) {
+        requestAnimationFrame(() => tryFocus(1));
+      }
+    }
+    tryFocus(0);
+  }
+
+  function moveFocus(nextIndex: number, extendSelection: boolean) {
+    const clamped = Math.max(0, Math.min(nextIndex, assets.length - 1));
+    setFocusedIndex(clamped);
+    rowVirtualizer.scrollToIndex(Math.floor(clamped / columns), { align: 'auto' });
+    focusCardAt(clamped);
+    if (extendSelection) {
+      const asset = assets[clamped];
+      if (asset) onToggleSelect(asset.id, { shiftKey: true });
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const current = clampedFocusedIndex;
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        moveFocus(current + 1, e.shiftKey);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        moveFocus(current - 1, e.shiftKey);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        moveFocus(current + columns, e.shiftKey);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        moveFocus(current - columns, e.shiftKey);
+        break;
+      case 'Home':
+        e.preventDefault();
+        moveFocus(0, e.shiftKey);
+        break;
+      case 'End':
+        e.preventDefault();
+        moveFocus(assets.length - 1, e.shiftKey);
+        break;
+      case 'Enter': {
+        const asset = assets[current];
+        if (asset) onOpen(asset.id);
+        break;
+      }
+      case ' ':
+      case 'Spacebar': {
+        e.preventDefault(); // stop the page from scrolling
+        const asset = assets[current];
+        if (asset) onToggleSelect(asset.id);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
   if (isInitialLoading) {
     return (
       <div className="empty" role="status" aria-live="polite">
@@ -135,7 +220,16 @@ export function AssetGrid({
   }
 
   return (
-    <div className="grid" ref={setScrollEl}>
+    <div
+      className="grid"
+      ref={setScrollEl}
+      role="grid"
+      aria-label="Assets"
+      aria-multiselectable="true"
+      aria-rowcount={rowCount}
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
+    >
       <div style={{ position: 'relative', width: '100%', height: rowVirtualizer.getTotalSize() }}>
         {virtualRows.map((virtualRow) => {
           const startIndex = virtualRow.index * columns;
@@ -145,6 +239,7 @@ export function AssetGrid({
               key={virtualRow.key}
               ref={rowVirtualizer.measureElement}
               data-index={virtualRow.index}
+              role="row"
               className="gridRow"
               style={{
                 position: 'absolute',
@@ -156,17 +251,23 @@ export function AssetGrid({
                 gap: GAP,
               }}
             >
-              {rowAssets.map((asset) => (
-                <AssetCard
-                  key={asset.id}
-                  asset={asset}
-                  selected={selectedIds.has(asset.id)}
-                  active={activeId === asset.id}
-                  failure={failuresById.get(asset.id)}
-                  onToggleSelect={onToggleSelect}
-                  onOpen={onOpen}
-                />
-              ))}
+              {rowAssets.map((asset, i) => {
+                const index = startIndex + i;
+                return (
+                  <AssetCard
+                    key={asset.id}
+                    asset={asset}
+                    index={index}
+                    tabbable={index === clampedFocusedIndex}
+                    selected={selectedIds.has(asset.id)}
+                    active={activeId === asset.id}
+                    failure={failuresById.get(asset.id)}
+                    onToggleSelect={onToggleSelect}
+                    onOpen={onOpen}
+                    onFocusCard={setFocusedIndex}
+                  />
+                );
+              })}
             </div>
           );
         })}
