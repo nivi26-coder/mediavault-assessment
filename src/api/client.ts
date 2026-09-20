@@ -1,5 +1,13 @@
 import type { Asset, AssetPage, AssetQuery, BulkResult } from '@/lib/types';
 
+// Empty by default: requests stay relative (`/api/...`), relying on Vite's
+// dev-only proxy locally, or on the frontend and API being served from the
+// same origin in production. Set `VITE_API_BASE_URL` at build time (e.g. to
+// a Render backend URL) only when the frontend and backend are deployed to
+// two separate origins — nothing else in this file needs to change either
+// way, since every path is built from this one constant.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
+
 /**
  * Error codes the mock API returns, per API.md. `retryable` is computed
  * structurally from the HTTP status (and network failures), never from the
@@ -207,16 +215,16 @@ function dedupedGet<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 export function listAssets(query: AssetQuery, signal?: AbortSignal): Promise<AssetPage> {
-  return dedupedGet<AssetPage>(`/api/assets?${toSearchParams(query)}`, signal);
+  return dedupedGet<AssetPage>(`${API_BASE}/api/assets?${toSearchParams(query)}`, signal);
 }
 
 export function getAsset(id: string, signal?: AbortSignal): Promise<Asset> {
-  return dedupedGet<Asset>(`/api/assets/${id}`, signal);
+  return dedupedGet<Asset>(`${API_BASE}/api/assets/${id}`, signal);
 }
 
 export function getAssetsByIds(ids: string[], signal?: AbortSignal): Promise<{ items: Asset[]; missing: string[] }> {
   // Note: the endpoint rejects more than 25 ids per call.
-  return dedupedGet(`/api/assets/batch?ids=${ids.join(',')}`, signal);
+  return dedupedGet(`${API_BASE}/api/assets/batch?ids=${ids.join(',')}`, signal);
 }
 
 export function updateAsset(
@@ -225,7 +233,7 @@ export function updateAsset(
   patch: Partial<Pick<Asset, 'name' | 'status' | 'tags'>>,
   signal?: AbortSignal,
 ): Promise<Asset> {
-  return request<Asset>(`/api/assets/${id}`, {
+  return request<Asset>(`${API_BASE}/api/assets/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ version, patch }),
     signal,
@@ -234,11 +242,11 @@ export function updateAsset(
 
 export function bulkSetStatus(ids: string[], status: Asset['status'], signal?: AbortSignal): Promise<BulkResult> {
   // Note: the endpoint rejects more than 50 ids per call.
-  return request<BulkResult>('/api/assets/bulk-status', {
+  return request<BulkResult>(`${API_BASE}/api/assets/bulk-status`, {
     method: 'POST',
     body: JSON.stringify({ ids, status }),
     signal,
   });
 }
 
-export const thumbnailUrl = (id: string) => `/api/thumb/${id}.svg`;
+export const thumbnailUrl = (id: string) => `${API_BASE}/api/thumb/${id}.svg`;
