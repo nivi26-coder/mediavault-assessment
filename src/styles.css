@@ -1,10 +1,10 @@
 /* Design tokens. Every color below was checked against WCAG AA with a
    contrast-ratio calculator against its actual usage (text on its actual
-   background) before being picked — not eyeballed. See PROGRESS.md for the
-   verified ratios. Two border tokens on purpose: `--line` for plain
-   decorative dividers (not required to hit 3:1), `--line-interactive` for
-   anything that has to read as an actual control boundary (checkboxes,
-   inputs, the resize handle), which does. */
+   background) before being picked — not eyeballed (see SUBMISSION.md's
+   Interface decisions for the verified ratios). Two border tokens on
+   purpose: `--line` for plain decorative dividers (not required to hit
+   3:1), `--line-interactive` for anything that has to read as an actual
+   control boundary (checkboxes, inputs, the resize handle), which does. */
 :root {
   --ink: #16181d;
   --ink-soft: #5b6270;
