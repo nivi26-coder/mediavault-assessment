@@ -116,6 +116,7 @@ export function AssetGrid({
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const lastVirtualRow = virtualRows[virtualRows.length - 1];
+  const firstVirtualRow = virtualRows[0];
 
   useEffect(() => {
     if (!lastVirtualRow) return;
@@ -131,6 +132,21 @@ export function AssetGrid({
   // top — it just settles on the new last item if the old position no
   // longer exists.
   const clampedFocusedIndex = Math.min(focusedIndex, Math.max(assets.length - 1, 0));
+
+  // Mouse-wheel scrolling moves the visible rows without ever calling
+  // moveFocus, so `clampedFocusedIndex` can point at a card that's been
+  // virtualized out of the DOM (only rows near the viewport are mounted).
+  // With nothing left in the DOM at tabIndex=0, Tab would skip the grid
+  // entirely. Fall back to the first currently-rendered card whenever the
+  // "real" focused index isn't actually on screen.
+  const firstRenderedIndex = firstVirtualRow ? firstVirtualRow.index * columns : 0;
+  const lastRenderedIndex = lastVirtualRow
+    ? Math.min(assets.length - 1, (lastVirtualRow.index + 1) * columns - 1)
+    : 0;
+  const tabbableIndex =
+    clampedFocusedIndex < firstRenderedIndex || clampedFocusedIndex > lastRenderedIndex
+      ? firstRenderedIndex
+      : clampedFocusedIndex;
 
   // Moves real DOM focus to the target card once it exists. A virtualized
   // row might not be mounted yet right after `scrollToIndex` — one retry
@@ -159,7 +175,10 @@ export function AssetGrid({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    const current = clampedFocusedIndex;
+    // Use the same fallback as the tabbable card itself — if focus landed
+    // here via Tab after a mouse scroll, `clampedFocusedIndex` may point at
+    // a card that's no longer the one actually focused.
+    const current = tabbableIndex;
     switch (e.key) {
       case 'ArrowRight':
         e.preventDefault();
@@ -258,7 +277,7 @@ export function AssetGrid({
                     key={asset.id}
                     asset={asset}
                     index={index}
-                    tabbable={index === clampedFocusedIndex}
+                    tabbable={index === tabbableIndex}
                     selected={selectedIds.has(asset.id)}
                     active={activeId === asset.id}
                     failure={failuresById.get(asset.id)}
